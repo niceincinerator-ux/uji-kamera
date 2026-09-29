@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Uji Kamera NICE</title>
+<style>
+  :root {
+    --hijau: #1C5518;
+    --teks: #1b1b1b;
+    --abu: #5c6660;
+    --garis: #d5dbd6;
+    --merah: #a11d1d;
+    --oranye: #9a5200;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f6f8f6; color: var(--teks);
+    font-family: -apple-system, Roboto, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.45;
+  }
+  header { background: var(--hijau); color: #fff; padding: 14px 16px; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; font-size: 13px; opacity: .85; }
+  main { padding: 16px; max-width: 560px; margin: 0 auto; }
+  .layar { display: none; }
+  .layar.aktif { display: block; }
+
+  .tombol {
+    display: block; width: 100%; padding: 16px; margin: 0 0 12px;
+    border: 2px solid var(--hijau); border-radius: 10px;
+    font-size: 16px; font-weight: 700;
+    background: var(--hijau); color: #fff;
+  }
+  .tombol.sekunder { background: #fff; color: var(--hijau); }
+  .tombol.kecil { padding: 10px; font-size: 14px; }
+  .catatan { color: var(--abu); font-size: 13px; margin: 0 0 16px; }
+  .peringatan {
+    background: #fdecec; border: 1px solid var(--merah); color: var(--merah);
+    padding: 10px 12px; border-radius: 8px; margin: 0 0 16px; font-size: 14px;
+  }
+
+  /* mode LAYAR */
+  .kotak-qr { text-align: center; }
+  .kotak-qr canvas { background: #fff; max-width: 100%; height: auto; }
+  .hitung { font-size: 28px; font-weight: 700; margin: 8px 0 0; }
+  .kode-teks { font-size: 12px; color: var(--abu); word-break: break-all; margin: 4px 0 16px; }
+
+  /* mode SCAN */
+  .kotak-video {
+    background: #000; border-radius: 10px; overflow: hidden;
+    aspect-ratio: 4 / 3; margin: 0 0 12px; position: relative;
+  }
+  .kotak-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .status { min-height: 22px; margin: 0 0 12px; font-weight: 600; }
+
+  /* kartu hasil */
+  .kartu { border-radius: 10px; padding: 14px; margin: 0 0 16px; border: 2px solid; background: #fff; }
+  .kartu .vonis { font-size: 20px; font-weight: 800; margin: 0 0 6px; }
+  .kartu.lulus { border-color: var(--hijau); }
+  .kartu.lulus .vonis { color: var(--hijau); }
+  .kartu.lambat { border-color: var(--oranye); }
+  .kartu.lambat .vonis { color: var(--oranye); }
+  .kartu.gagal-kamera, .kartu.gagal-baca { border-color: var(--merah); }
+  .kartu.gagal-kamera .vonis, .kartu.gagal-baca .vonis { color: var(--merah); }
+  .kartu p { margin: 0 0 10px; }
+
+  table.info { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.info th, table.info td { text-align: left; vertical-align: top; padding: 4px 6px; border-top: 1px solid var(--garis); }
+  table.info th { width: 42%; font-weight: 600; color: var(--abu); }
+  table.info td { word-break: break-word; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Uji kamera QR</h1>
+  <p>Modul Kehadiran &amp; HR, langkah K-H-024. Halaman sementara, tidak menyimpan data apa pun.</p>
+</header>
+
+<main>
+
+  <!-- BERANDA -->
+  <section id="beranda" class="layar aktif">
+    <div id="peringatanPustaka" class="peringatan" hidden></div>
+    <button class="tombol" id="btnLayar">MODE LAYAR (dibuka di laptop)</button>
+    <button class="tombol sekunder" id="btnScan">MODE SCAN (dibuka di HP)</button>
+    <p class="catatan">Laptop menampilkan QR yang berganti tiap 30 detik. HP menyalakan kamera dan membacanya. Lulus = QR terbaca dalam 3 detik sejak kamera menyala.</p>
+    <table class="info" id="infoAwal"></table>
+  </section>
+
+  <!-- MODE LAYAR -->
+  <section id="layar" class="layar">
+    <div class="kotak-qr">
+      <canvas id="kanvasQR" width="10" height="10"></canvas>
+      <p class="hitung">Berganti dalam <span id="sisa">30</span> detik</p>
+      <p class="kode-teks" id="kodeTeks"></p>
+    </div>
+    <button class="tombol sekunder kecil" id="btnKembaliLayar">Kembali</button>
+  </section>
+
+  <!-- MODE SCAN -->
+  <section id="scan" class="layar">
+    <div class="kotak-video">
+      <video id="video" playsinline muted autoplay></video>
+    </div>
+    <p class="status" id="status">Tekan tombol di bawah untuk menyalakan kamera.</p>
+    <button class="tombol" id="btnNyalakan">Nyalakan kamera</button>
+    <button class="tombol sekunder kecil" id="btnMatikan">Matikan kamera</button>
+    <div id="hasil" class="kartu" hidden></div>
+    <button class="tombol sekunder kecil" id="btnKembaliScan">Kembali</button>
+  </section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ---- Pengaturan uji (hanya untuk halaman uji ini) ----
+  var AWALAN = 'NICE-UJI-';
+  var BATAS_LULUS_DETIK = 3;      // sesuai blueprint: terbaca dalam 3 detik
+  var BATAS_BACA_DETIK = 10;      // lewat ini = kamera nyala tapi QR tak terbaca
+  var BATAS_TAK_ADA_GAMBAR_MS = 15000;
+
+  function $(id) { return document.getElementById(id); }
+
+  // ---- Penghitung ketukan (sekadar info: berapa ketukan di halaman ini) ----
+  var ketukan = 0;
+  document.addEventListener('click', function () { ketukan++; }, true);
+
+  // ---- Info perangkat & bingkai ----
+  var statusIzin = 'belum dicek';
+  function bacaStatusIzin() {
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'camera' }).then(
+          function (p) { statusIzin = p.state; },
+          function () { statusIzin = 'tidak bisa dicek di browser ini'; }
+        );
+      } else {
+        statusIzin = 'tidak bisa dicek di browser ini';
+      }
+    } catch (e) { statusIzin = 'tidak bisa dicek di browser ini'; }
+  }
+
+  function cekKebijakan() {
+    try {
+      var fp = document.permissionsPolicy || document.featurePolicy;
+      if (fp && typeof fp.allowsFeature === 'function') {
+        return fp.allowsFeature('camera') ? 'ya' : 'TIDAK';
+      }
+    } catch (e) {}
+    return 'tidak bisa dicek di browser ini';
+  }
+
+  function kumpulInfo() {
+    var terpasang = false;
+    try {
+      terpasang = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+                  navigator.standalone === true;
+    } catch (e) {}
+    var dalamBingkai = false;
+    try { dalamBingkai = window.self !== window.top; } catch (e) { dalamBingkai = true; }
+    var adaKamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    return [
+      ['Mode tampilan', terpasang ? 'aplikasi terpasang (standalone)' : 'browser biasa'],
+      ['Di dalam bingkai', dalamBingkai ? 'ya' : 'tidak'],
+      ['Host halaman', location.hostname],
+      ['Koneksi aman (HTTPS)', window.isSecureContext ? 'ya' : 'TIDAK'],
+      ['Akses kamera tersedia di browser', adaKamera ? 'ya' : 'TIDAK'],
+      ['Izin kamera diteruskan bingkai', cekKebijakan()],
+      ['Status izin kamera', statusIzin],
+      ['Layar', screen.width + 'x' + screen.height + ' @' + (window.devicePixelRatio || 1) + 'x'],
+      ['Pustaka pembaca QR (jsQR)', typeof jsQR === 'function' ? 'dimuat' : 'GAGAL DIMUAT'],
+      ['Pustaka pembuat QR', typeof qrcode === 'function' ? 'dimuat' : 'GAGAL DIMUAT'],
+      ['Browser', navigator.userAgent]
+    ];
+  }
+
+  function isiTabel(tabel, baris) {
+    tabel.innerHTML = '';
+    baris.forEach(function (b) {
+      var tr = document.createElement('tr');
+      var th = document.createElement('th'); th.textContent = b[0];
+      var td = document.createElement('td'); td.textContent = b[1];
+      tr.appendChild(th); tr.appendChild(td);
+      tabel.appendChild(tr);
+    });
+  }
+
+  // ---- Pindah layar ----
+  function tampil(id) {
+    ['beranda', 'layar', 'scan'].forEach(function (n) {
+      $(n).classList.toggle('aktif', n === id);
+    });
+  }
+
+  // =====================================================================
+  // MODE LAYAR: QR yang berganti tiap 30 detik (dihitung di laptop, tanpa server)
+  // =====================================================================
+  var pewaktuLayar = null;
+  var slotTerakhir = -1;
+
+  function acak(n) { return Math.random().toString(36).slice(2, 2 + n); }
+
+  function gambarQR(teks) {
+    var qr = qrcode(0, 'M');
+    qr.addData(teks);
+    qr.make();
+    var n = qr.getModuleCount();
+    var pinggir = 4; // daerah kosong di sekeliling QR, wajib agar terbaca
+    var target = Math.min(window.innerWidth - 32, 440);
+    var skala = Math.max(2, Math.floor(target / (n + 2 * pinggir)));
+    var sisi = skala * (n + 2 * pinggir);
+    var kanvas = $('kanvasQR');
+    kanvas.width = sisi; kanvas.height = sisi;
+    var g = kanvas.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, sisi, sisi);
+    g.fillStyle = '#000000';
+    for (var r = 0; r < n; r++) {
+      for (var c = 0; c < n; c++) {
+        if (qr.isDark(r, c)) g.fillRect((c + pinggir) * skala, (r + pinggir) * skala, skala, skala);
+      }
+    }
+  }
+
+  function tikLayar() {
+    var sekarang = Date.now();
+    var slot = Math.floor(sekarang / 30000);
+    if (slot !== slotTerakhir) {
+      slotTerakhir = slot;
+      var teks = AWALAN + slot + '-' + acak(4);
+      gambarQR(teks);
+      $('kodeTeks').textContent = teks;
+    }
+    $('sisa').textContent = String(30 - Math.floor((sekarang % 30000) / 1000));
+  }
+
+  function mulaiLayar() {
+    if (typeof qrcode !== 'function') {
+      $('peringatanPustaka').hidden = false;
+      $('peringatanPustaka').textContent = 'Pustaka pembuat QR gagal dimuat dari internet. Ini bukan soal kamera. Periksa sinyal lalu muat ulang halaman.';
+      return;
+    }
+    tampil('layar');
+    slotTerakhir = -1;
+    tikLayar();
+    if (pewaktuLayar) clearInterval(pewaktuLayar);
+    pewaktuLayar = setInterval(tikLayar, 500);
+  }
+
+  function akhiriLayar() {
+    if (pewaktuLayar) { clearInterval(pewaktuLayar); pewaktuLayar = null; }
+    tampil('beranda');
+  }
+
+  // =====================================================================
+  // MODE SCAN: kamera menyala langsung, baca QR, ukur waktu
+  // =====================================================================
+  var stream = null;
+  var rafId = null;
+  var t = {};
+  var kanvasKerja = document.createElement('canvas');
+  var g2d = kanvasKerja.getContext('2d', { willReadFrequently: true });
+
+  function setStatus(teks) { $('status').textContent = teks; }
+
+  function hentikan() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    if (stream) {
+      stream.getTracks().forEach(function (tr) { try { tr.stop(); } catch (e) {} });
+      stream = null;
+    }
+    try { $('video').srcObject = null; } catch (e) {}
+  }
+
+  function detik(ms) { return (ms / 1000).toFixed(1); }
+
+  function tampilHasil(kelas, judul, keterangan, baris) {
+    var el = $('hasil');
+    el.className = 'kartu ' + kelas;
+    el.innerHTML = '';
+    var h = document.createElement('div'); h.className = 'vonis'; h.textContent = judul;
+    var p = document.createElement('p'); p.textContent = keterangan;
+    var tb = document.createElement('table'); tb.className = 'info';
+    isiTabel(tb, baris.concat(kumpulInfo()));
+    el.appendChild(h); el.appendChild(p); el.appendChild(tb);
+    el.hidden = false;
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+  }
+
+  function barisWaktu() {
+    var baris = [];
+    baris.push(['Ketukan di halaman ini', String(ketukan) + ' (belum termasuk tombol Izinkan dari sistem HP)']);
+    baris.push(['Status izin sebelum menekan tombol', t.izinSebelum || '-']);
+    if (t.nyala) {
+      baris.push(['Tekan tombol sampai gambar kamera muncul', detik(t.nyala - t.tap) + ' dtk (termasuk waktu menekan Izinkan)']);
+      baris.push(['Izin diberikan sampai gambar muncul', detik(t.nyala - t.mulaiLoop) + ' dtk']);
+      baris.push(['Resolusi kamera', t.resolusi]);
+    }
+    if (t.jumlah) {
+      baris.push(['Rata-rata proses baca per bingkai', Math.round(t.totalMs / t.jumlah) + ' ms (' + t.jumlah + ' bingkai)']);
+    }
+    return baris;
+  }
+
+  function berhasil(data) {
+    var lama = performance.now() - t.nyala;
+    hentikan();
+    setStatus('QR terbaca.');
+    var baris = [['Isi QR yang terbaca', data]].concat(barisWaktu());
+    baris.unshift(['QR terbaca sejak kamera menyala', detik(lama) + ' dtk (batas ' + BATAS_LULUS_DETIK + ' dtk)']);
+    if (lama / 1000 <= BATAS_LULUS_DETIK) {
+      tampilHasil('lulus', 'LULUS. QR terbaca ' + detik(lama) + ' detik',
+        'Kamera menyala dan QR terbaca dalam batas 3 detik. Screenshot kartu ini lalu kirim ke Dejan.', baris);
+    } else {
+      tampilHasil('lambat', 'TERBACA TAPI LAMBAT. ' + detik(lama) + ' detik',
+        'Kamera jalan dan QR terbaca, tetapi lewat batas 3 detik. Coba sekali lagi dengan jarak sekitar 20-30 cm dari layar. Kalau tetap lambat, screenshot dan kirim ke Dejan.', baris);
+    }
+  }
+
+  function gagalBaca() {
+    hentikan();
+    setStatus('Kamera nyala, tapi QR belum terbaca.');
+    tampilHasil('gagal-baca', 'KAMERA NYALA, QR TIDAK TERBACA',
+      'Kamera berfungsi, tetapi tidak ada QR uji yang terbaca dalam ' + BATAS_BACA_DETIK + ' detik. Cek dulu: QR di laptop sedang tampil? Layar laptop cukup terang? Jarak HP sekitar 20-30 cm? Ulangi sekali. Kalau tetap gagal, screenshot dan kirim ke Dejan.',
+      barisWaktu());
+  }
+
+  function tebakSebab(e) {
+    var nama = (e && e.name) || '';
+    var kebijakan = cekKebijakan();
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      return 'Browser tidak menyediakan akses kamera di halaman ini (biasanya karena bukan HTTPS atau dibatasi bingkai).';
+    }
+    if (nama === 'NotAllowedError' || nama === 'PermissionDeniedError') {
+      if (kebijakan === 'TIDAK') {
+        return 'Diblokir oleh bingkai halaman: izin kamera tidak diteruskan ke halaman ini. Ini masalah rancangan, bukan salah pengguna.';
+      }
+      return 'Izin ditolak. Kemungkinan tombol Blokir tertekan, atau bingkai memblokir. Cek pengaturan izin situs di browser (ikon gembok di kolom alamat), lalu ulangi sekali.';
+    }
+    if (nama === 'NotFoundError') return 'Kamera tidak ditemukan di perangkat ini.';
+    if (nama === 'NotReadableError') return 'Kamera sedang dipakai aplikasi lain. Tutup aplikasi kamera atau aplikasi lain yang memakainya, lalu ulangi.';
+    if (nama === 'SecurityError') return 'Diblokir kebijakan keamanan browser.';
+    if (nama === 'OverconstrainedError') return 'Kamera menolak pengaturan yang diminta.';
+    return 'Penyebab tidak dikenali. Kirim screenshot kartu ini ke Dejan.';
+  }
+
+  function gagalKamera(e) {
+    hentikan();
+    setStatus('Kamera tidak bisa dinyalakan.');
+    var baris = [
+      ['Nama error', (e && e.name) || '-'],
+      ['Pesan error', (e && e.message) || '-']
+    ].concat(barisWaktu());
+    tampilHasil('gagal-kamera', 'GAGAL. Kamera tidak bisa dinyalakan', tebakSebab(e), baris);
+  }
+
+  function loop() {
+    if (!stream) return;
+    var v = $('video');
+    var sekarang = performance.now();
+
+    if (v.readyState >= 2 && v.videoWidth > 0) {
+      if (!t.nyala) {
+        t.nyala = sekarang;
+        t.resolusi = v.videoWidth + 'x' + v.videoHeight;
+        setStatus('Kamera menyala. Arahkan ke QR di layar laptop.');
+      }
+      if (sekarang - t.terakhir >= 100) {
+        t.terakhir = sekarang;
+        var w = v.videoWidth, h = v.videoHeight;
+        var sk = Math.min(1, 800 / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * sk)), ch = Math.max(1, Math.round(h * sk));
+        if (kanvasKerja.width !== cw) kanvasKerja.width = cw;
+        if (kanvasKerja.height !== ch) kanvasKerja.height = ch;
+        g2d.drawImage(v, 0, 0, cw, ch);
+        var mulai = performance.now();
+        var gambar = g2d.getImageData(0, 0, cw, ch);
+        var kode = jsQR(gambar.data, cw, ch, { inversionAttempts: 'dontInvert' });
+        t.totalMs += performance.now() - mulai;
+        t.jumlah++;
+        if (kode && kode.data) {
+          if (kode.data.indexOf(AWALAN) === 0) { berhasil(kode.data); return; }
+          setStatus('Terbaca QR lain (bukan QR uji). Arahkan ke QR di layar laptop.');
+        }
+      }
+      if ((sekarang - t.nyala) / 1000 > BATAS_BACA_DETIK) { gagalBaca(); return; }
+    } else if (sekarang - t.mulaiLoop > BATAS_TAK_ADA_GAMBAR_MS) {
+      gagalKamera({ name: 'TidakAdaGambar', message: 'Izin diberikan tetapi kamera tidak menghasilkan gambar dalam 15 detik.' });
+      return;
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function nyalakan() {
+    hentikan();
+    $('hasil').hidden = true;
+    t = { tap: performance.now(), izinSebelum: statusIzin, nyala: 0, terakhir: 0, totalMs: 0, jumlah: 0, mulaiLoop: 0, resolusi: '' };
+
+    if (typeof jsQR !== 'function') {
+      tampilHasil('gagal-kamera', 'PUSTAKA PEMBACA QR GAGAL DIMUAT',
+        'Pustaka jsQR tidak terunduh dari internet. Ini bukan soal kamera. Periksa sinyal, muat ulang halaman, lalu ulangi.', []);
+      return;
+    }
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      gagalKamera({ name: 'TidakAdaMediaDevices', message: 'navigator.mediaDevices.getUserMedia tidak tersedia' });
+      return;
+    }
+    setStatus('Meminta izin kamera... tekan Izinkan jika muncul.');
+
+    var minta = function (batasan) { return navigator.mediaDevices.getUserMedia(batasan); };
+    minta({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+      .catch(function (e) {
+        // Kamera menolak pengaturan tertentu: coba sekali dengan pengaturan paling sederhana
+        if (e && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) {
+          return minta({ video: true, audio: false });
+        }
+        throw e;
+      })
+      .then(function (s) {
+        stream = s;
+        var v = $('video');
+        v.setAttribute('playsinline', '');
+        v.muted = true;
+        v.srcObject = s;
+        t.mulaiLoop = performance.now();
+        var jalan = v.play();
+        if (jalan && jalan.catch) jalan.catch(function () { /* autoplay ditangani loop */ });
+        rafId = requestAnimationFrame(loop);
+      })
+      .catch(gagalKamera);
+  }
+
+  function matikan() {
+    hentikan();
+    setStatus('Kamera dimatikan.');
+  }
+
+  function akhiriScan() {
+    hentikan();
+    tampil('beranda');
+    isiTabel($('infoAwal'), kumpulInfo());
+  }
+
+  // ---- Pasang tombol ----
+  $('btnLayar').addEventListener('click', mulaiLayar);
+  $('btnScan').addEventListener('click', function () { tampil('scan'); });
+  $('btnKembaliLayar').addEventListener('click', akhiriLayar);
+  $('btnNyalakan').addEventListener('click', nyalakan);
+  $('btnMatikan').addEventListener('click', matikan);
+  $('btnKembaliScan').addEventListener('click', akhiriScan);
+
+  // ---- Saat halaman dibuka ----
+  bacaStatusIzin();
+  if (typeof jsQR !== 'function' || typeof qrcode !== 'function') {
+    var p = $('peringatanPustaka');
+    p.hidden = false;
+    p.textContent = 'Salah satu pustaka QR gagal dimuat dari internet. Muat ulang halaman. Kalau tetap begini, screenshot layar ini dan kirim ke Dejan.';
+  }
+  setTimeout(function () { isiTabel($('infoAwal'), kumpulInfo()); }, 400);
+})();
+</script>
+</body>
+</html>
