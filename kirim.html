@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uji kirim ke Apps Script</title>
+<style>
+  :root {
+    --hijau: #1C5518;
+    --teks: #1b1b1b;
+    --abu: #5c6660;
+    --garis: #d5dbd6;
+    --merah: #a11d1d;
+    --oranye: #9a5200;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f6f8f6; color: var(--teks);
+    font-family: -apple-system, Roboto, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.45;
+  }
+  header { background: var(--hijau); color: #fff; padding: 14px 16px; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; font-size: 13px; opacity: .85; }
+  main { padding: 16px; max-width: 560px; margin: 0 auto; }
+
+  .tombol {
+    display: block; width: 100%; padding: 16px; margin: 0 0 12px;
+    border: 2px solid var(--hijau); border-radius: 10px;
+    font-size: 16px; font-weight: 700;
+    background: var(--hijau); color: #fff;
+  }
+  .tombol.sekunder { background: #fff; color: var(--hijau); }
+  .tombol[disabled] { opacity: .5; }
+  .catatan { color: var(--abu); font-size: 13px; margin: 0 0 16px; }
+  .status { min-height: 22px; margin: 0 0 12px; font-weight: 600; }
+
+  .kartu { border-radius: 10px; padding: 14px; margin: 0 0 16px; border: 2px solid; background: #fff; }
+  .kartu .vonis { font-size: 20px; font-weight: 800; margin: 0 0 6px; }
+  .kartu.lulus { border-color: var(--hijau); }
+  .kartu.lulus .vonis { color: var(--hijau); }
+  .kartu.lambat { border-color: var(--oranye); }
+  .kartu.lambat .vonis { color: var(--oranye); }
+  .kartu.gagal { border-color: var(--merah); }
+  .kartu.gagal .vonis { color: var(--merah); }
+  .kartu p { margin: 0 0 10px; }
+
+  table.info { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.info th, table.info td { text-align: left; vertical-align: top; padding: 4px 6px; border-top: 1px solid var(--garis); }
+  table.info th { width: 42%; font-weight: 600; color: var(--abu); }
+  table.info td { word-break: break-word; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Uji kirim ke Apps Script</h1>
+  <p>Modul Kehadiran &amp; HR, langkah T-H-08. Halaman sementara, tidak menyimpan data NICE.</p>
+</header>
+
+<main>
+  <button class="tombol" id="btnSatu">Kirim tes (1 kali)</button>
+  <button class="tombol sekunder" id="btnLima">Kirim 5 kali berturut-turut</button>
+  <p class="catatan">Tombol pertama menguji apakah halaman ini bisa mengirim data dan membaca balasan penerima. Tombol kedua mengukur kecepatan dan kestabilannya. Lulus = balasan terbaca dan kode yang dikirim kembali persis sama.</p>
+  <p class="status" id="status">Siap.</p>
+  <div id="hasil" class="kartu" hidden></div>
+  <table class="info" id="infoAwal"></table>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  // Alamat penerima (proyek Apps Script UJI-KIRIM). Hanya untuk uji ini.
+  var URL_PENERIMA = 'https://script.google.com/macros/s/AKfycbyiFd7PJJUWVpXEc8BRVJxY_i3oeRu3A9pia4mJCMLZh8SnH3TpMPE16ILlUHXdIU6M/exec';
+
+  var BATAS_WAKTU_MS = 20000;   // lewat ini dianggap tidak menjawab
+  var BATAS_LAMBAT_MS = 5000;   // blueprint Pengadaan: dashboard >5 dtk = mulai dipikirkan
+
+  function $(id) { return document.getElementById(id); }
+  function detik(ms) { return (ms / 1000).toFixed(1); }
+
+  // ---------- tabel ----------
+  function isiTabel(tabel, baris) {
+    tabel.innerHTML = '';
+    baris.forEach(function (b) {
+      var tr = document.createElement('tr');
+      var th = document.createElement('th'); th.textContent = b[0];
+      var td = document.createElement('td'); td.textContent = b[1];
+      tr.appendChild(th); tr.appendChild(td);
+      tabel.appendChild(tr);
+    });
+  }
+
+  function infoPerangkat() {
+    return [
+      ['Host halaman', location.hostname],
+      ['Koneksi aman (HTTPS)', window.isSecureContext ? 'ya' : 'TIDAK'],
+      ['Sedang online menurut browser', navigator.onLine ? 'ya' : 'TIDAK'],
+      ['Alamat penerima', URL_PENERIMA.replace(/^(.{40}).*(.{12})$/, '$1 ... $2')],
+      ['Browser', navigator.userAgent]
+    ];
+  }
+
+  // ---------- jam ----------
+  // jamServer dikirim sebagai teks "yyyy-MM-dd HH:mm:ss" waktu Jakarta (+07:00)
+  function jamServerKeMs(teks) {
+    if (typeof teks !== 'string') return NaN;
+    return Date.parse(teks.replace(' ', 'T') + '+07:00');
+  }
+
+  // ---------- satu kiriman ----------
+  function kirimSatu(nomor) {
+    var mulai = performance.now();
+    var jamHP = new Date();
+    var kode = 'NICE-KIRIM-' + jamHP.getTime() + '-' + nomor;
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, BATAS_WAKTU_MS);
+
+    return fetch(URL_PENERIMA, {
+      method: 'POST',
+      // text/plain sengaja dipakai: tidak memicu pemeriksaan awal (preflight) yang tidak didukung Apps Script
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ kode: kode, dariHalaman: location.hostname, jamHP: jamHP.toISOString() }),
+      signal: ctl.signal
+    }).then(function (res) {
+      var status = res.status;
+      return res.text().then(function (teks) {
+        clearTimeout(timer);
+        var data = null;
+        try { data = JSON.parse(teks); } catch (e) { data = null; }
+        return { status: status, teks: teks, data: data, ms: performance.now() - mulai, kode: kode, jamHP: jamHP };
+      });
+    }).catch(function (err) {
+      clearTimeout(timer);
+      return { galat: err, ms: performance.now() - mulai, kode: kode, jamHP: jamHP };
+    });
+  }
+
+  // sukses hanya kalau penerima benar-benar mengirim balik kode yang sama
+  function sukses(r) {
+    return !!(r && r.data && r.data.status === 'diterima' && r.data.diterima && r.data.diterima.kode === r.kode);
+  }
+
+  function jelaskanGagal(r) {
+    if (r.galat) {
+      var nama = r.galat.name || '';
+      if (nama === 'AbortError') {
+        return 'Penerima tidak menjawab dalam ' + (BATAS_WAKTU_MS / 1000) + ' detik. Cek sinyal HP lalu ulangi sekali.';
+      }
+      if (!navigator.onLine) {
+        return 'HP tidak punya koneksi internet saat ini. Ini bukan soal rancangan. Cek sinyal lalu ulangi.';
+      }
+      return 'Browser menolak mengirim atau menolak membaca balasan. Ini tanda khas pemblokiran lintas alamat (CORS), dan inilah yang sedang diuji. Kirim tangkapan layar kartu ini ke Dejan.';
+    }
+    if (r.data === null) {
+      return 'Balasan terbaca tetapi bukan dari penerima UJI-KIRIM (kemungkinan halaman login Google, artinya akses deployment belum "Siapa saja"). Kirim tangkapan layar ke Dejan.';
+    }
+    return 'Penerima menjawab, tetapi kode yang dikirim tidak kembali persis sama. Kirim tangkapan layar ke Dejan.';
+  }
+
+  // ---------- kartu hasil ----------
+  function tampilKartu(kelas, judul, keterangan, baris) {
+    var el = $('hasil');
+    el.className = 'kartu ' + kelas;
+    el.innerHTML = '';
+    var h = document.createElement('div'); h.className = 'vonis'; h.textContent = judul;
+    var p = document.createElement('p'); p.textContent = keterangan;
+    var tb = document.createElement('table'); tb.className = 'info';
+    isiTabel(tb, baris.concat(infoPerangkat()));
+    el.appendChild(h); el.appendChild(p); el.appendChild(tb);
+    el.hidden = false;
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+  }
+
+  function barisSatu(r) {
+    var baris = [];
+    baris.push(['Waktu pulang-pergi (kirim sampai balasan terbaca)', detik(r.ms) + ' dtk']);
+    if (r.status !== undefined) baris.push(['Kode status HTTP', String(r.status)]);
+    baris.push(['Kode yang dikirim', r.kode]);
+    if (r.data && r.data.diterima) baris.push(['Kode yang kembali', String(r.data.diterima.kode)]);
+    if (r.data && r.data.jamServer) {
+      baris.push(['Jam server (Jakarta)', r.data.jamServer]);
+      var selisih = (jamServerKeMs(r.data.jamServer) - r.jamHP.getTime()) / 1000;
+      if (!isNaN(selisih)) {
+        baris.push(['Jam server dikurangi jam HP', selisih.toFixed(1) + ' dtk (info saja; jam HP bisa meleset)']);
+      }
+    }
+    if (r.galat) {
+      baris.push(['Nama error', r.galat.name || '-']);
+      baris.push(['Pesan error', r.galat.message || '-']);
+    }
+    if (r.teks && !r.data) {
+      baris.push(['Potongan balasan mentah', r.teks.slice(0, 160)]);
+    }
+    return baris;
+  }
+
+  function aturTombol(aktif) {
+    $('btnSatu').disabled = !aktif;
+    $('btnLima').disabled = !aktif;
+  }
+
+  // ---------- tombol 1: kirim sekali ----------
+  function ujiSatu() {
+    aturTombol(false);
+    $('hasil').hidden = true;
+    $('status').textContent = 'Mengirim...';
+    kirimSatu(1).then(function (r) {
+      aturTombol(true);
+      $('status').textContent = 'Selesai.';
+      if (sukses(r)) {
+        if (r.ms <= BATAS_LAMBAT_MS) {
+          tampilKartu('lulus', 'LULUS. Balasan terbaca dalam ' + detik(r.ms) + ' detik',
+            'Halaman GitHub berhasil mengirim ke Apps Script dan membaca balasannya. Screenshot kartu ini lalu kirim ke Dejan.',
+            barisSatu(r));
+        } else {
+          tampilKartu('lambat', 'TERBACA TAPI LAMBAT. ' + detik(r.ms) + ' detik',
+            'Pengiriman berhasil, tetapi lebih dari ' + (BATAS_LAMBAT_MS / 1000) + ' detik. Ulangi sekali. Kalau tetap lambat, screenshot dan kirim ke Dejan.',
+            barisSatu(r));
+        }
+      } else {
+        tampilKartu('gagal', 'GAGAL. Kiriman tidak berhasil dibaca', jelaskanGagal(r), barisSatu(r));
+      }
+    });
+  }
+
+  // ---------- tombol 2: kirim 5 kali berturut-turut ----------
+  function ujiLima() {
+    aturTombol(false);
+    $('hasil').hidden = true;
+    var hasil = [];
+    var i = 0;
+
+    function berikut() {
+      if (i >= 5) { selesai(); return; }
+      i++;
+      $('status').textContent = 'Mengirim ke-' + i + ' dari 5...';
+      kirimSatu(i).then(function (r) { hasil.push(r); berikut(); });
+    }
+
+    function selesai() {
+      aturTombol(true);
+      $('status').textContent = 'Selesai.';
+      var ok = hasil.filter(sukses);
+      var waktu = ok.map(function (r) { return r.ms; });
+      var jumlah = waktu.length;
+      var rata = jumlah ? waktu.reduce(function (a, b) { return a + b; }, 0) / jumlah : 0;
+      var terlama = jumlah ? Math.max.apply(null, waktu) : 0;
+      var baris = [
+        ['Berhasil', jumlah + ' dari 5'],
+        ['Rata-rata waktu', jumlah ? detik(rata) + ' dtk' : '-'],
+        ['Paling lama', jumlah ? detik(terlama) + ' dtk' : '-']
+      ];
+      hasil.forEach(function (r, n) {
+        baris.push(['Kiriman ke-' + (n + 1),
+          sukses(r) ? ('berhasil, ' + detik(r.ms) + ' dtk') : ('GAGAL, ' + (r.galat ? (r.galat.name || 'error') : 'balasan tidak cocok'))]);
+      });
+      if (jumlah === 5 && terlama <= BATAS_LAMBAT_MS) {
+        tampilKartu('lulus', 'LULUS. 5 dari 5 berhasil, paling lama ' + detik(terlama) + ' detik',
+          'Pengiriman stabil lima kali berturut-turut. Screenshot kartu ini lalu kirim ke Dejan.', baris);
+      } else if (jumlah === 5) {
+        tampilKartu('lambat', 'BERHASIL SEMUA TAPI ADA YANG LAMBAT',
+          'Lima kiriman berhasil, tetapi ada yang lebih dari ' + (BATAS_LAMBAT_MS / 1000) + ' detik. Screenshot dan kirim ke Dejan.', baris);
+      } else {
+        tampilKartu('gagal', 'TIDAK STABIL. ' + jumlah + ' dari 5 berhasil',
+          'Ada kiriman yang gagal. Jangan ulangi berkali-kali, cukup screenshot kartu ini lalu kirim ke Dejan.', baris);
+      }
+    }
+
+    berikut();
+  }
+
+  $('btnSatu').addEventListener('click', ujiSatu);
+  $('btnLima').addEventListener('click', ujiLima);
+  isiTabel($('infoAwal'), infoPerangkat());
+})();
+</script>
+</body>
+</html>
